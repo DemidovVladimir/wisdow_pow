@@ -1,0 +1,14 @@
+version: '3'
+services:
+  server:
+    build: ./pow-server
+    networks:
+      - mynetwork
+
+  client:
+    build: ./pow-client
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
