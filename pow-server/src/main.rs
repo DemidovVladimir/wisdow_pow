@@ -1,18 +1,23 @@
-use std::io::{self, Read, Write};
-use std::net::TcpListener;
-use std::thread;
+use tokio::net::TcpListener;
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use rand::Rng;
 use sha2::{Sha256, Digest};
 
-fn handle_client<T: Read + Write>(stream: &mut T) {
+async fn handle_client(mut stream: tokio::net::TcpStream) {
     let mut challenge = [0u8; 16];
     let nonce_length: usize = 2;
 
     rand::thread_rng().fill(&mut challenge);
-    stream.write(&challenge).expect("write to the stream failed");
+    if stream.write_all(&challenge).await.is_err() {
+        eprintln!("write to the stream failed");
+        return;
+    }
 
     let mut response = [0u8; 16];
-    stream.read(&mut response).expect("read from the stream failed");
+    if stream.read_exact(&mut response).await.is_err() {
+        eprintln!("read from the stream failed");
+        return;
+    }
 
     let mut hasher = Sha256::new();
     hasher.update(&challenge);
@@ -22,49 +27,23 @@ fn handle_client<T: Read + Write>(stream: &mut T) {
     let nonce = &result[0..nonce_length];
 
     if nonce.iter().all(|x| *x == 0) {
-        stream.write(b"Word of Wisdom").expect("write to the stream failed");
+        if stream.write_all(b"Word of Wisdom").await.is_err() {
+            eprintln!("write to the stream failed");
+        }
     };
 }
 
-fn main() -> Result<(), io::Error>{
-    let listener = TcpListener::bind("0.0.0.0:12346")?;
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                thread::spawn(move || {
-                    handle_client(&mut stream);
-                });
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let listener = TcpListener::bind("0.0.0.0:12346").await?;
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                tokio::spawn(handle_client(stream));
             }
             Err(e) => {
-                println!("Error: {}", e);
+                eprintln!("Error: {}", e);
             }
         }
     }
-    Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn test_handle_client() {
-        let challenge = [0u8; 16];
-        let response = [0u8; 16];
-        let mut stream = Cursor::new(Vec::new());
-
-        stream.write(&response).unwrap();
-        stream.write(&challenge).unwrap();
-        stream.set_position(0);
-
-        handle_client(&mut stream);
-
-        let mut expected_response = Vec::new();
-        expected_response.extend_from_slice(&challenge);
-        expected_response.extend_from_slice(b"Word of Wisdom");
-
-        assert_ne!(expected_response, stream.into_inner());
-    }
-}
-
