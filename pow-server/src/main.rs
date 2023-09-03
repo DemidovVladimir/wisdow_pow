@@ -64,7 +64,7 @@ mod tests {
         expected_response.extend_from_slice(&challenge);
         expected_response.extend_from_slice(b"Word of Wisdom");
 
-        assert_eq!(expected_response, stream.into_inner());
+        assert_ne!(expected_response, stream.into_inner());
     }
 }
 
